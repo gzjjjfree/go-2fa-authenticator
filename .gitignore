@@ -1,0 +1,6 @@
+bundletool*
+*.aab
+*.apk
+*.apks
+*.jks
+*.sh
