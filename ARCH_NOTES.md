@@ -12,3 +12,5 @@
    - **账号管理页**: 在“账号管理”标签中展示所有已保存账号列表及操作按钮。
    - **全宽度内联编辑弹窗 (`dialog.NewCustomConfirm`)**: 点击编辑时在原窗口内弹出表单对话框，宽度自动适配为窗口宽度减 20px（左右两边沿各留 10px 间距），支持修改账号名称及密钥，并自动进行 TOTP 格式校验。
    - **删除确认**: 支持确认删除账号并同步刷新选择器与主界面。
+3. **CI/CD 发布流水线扩充 (`release.yml`)**:
+   - 在 GitHub Actions 中新增 `build-windows` 任务（基于 `windows-latest` 运行环境使用 `fyne package -os windows`），自动编译并生成 Windows `.exe` 可执行文件，并在 `create-release` 阶段自动上传至 GitHub Release 附件中。
