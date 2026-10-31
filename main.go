@@ -32,8 +32,7 @@ func main() {
 
 	// 验证码显示标签
 	codeLabel := widget.NewLabelWithStyle("------", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-
-	codeLabel.SizeName = theme.SizeNameWindowTitleBarHeight //.TextSize = 48
+	codeLabel.SizeName = theme.SizeNameWindowTitleBarHeight
 
 	// 30秒倒计时进度条
 	progressBar := widget.NewProgressBar()
@@ -83,7 +82,7 @@ func main() {
 		dialog.ShowInformation("成功", "账号已保存", myWindow)
 	})
 
-	// ================= 布局组装 =================
+	// ================= 主页布局 =================
 
 	topSection := container.NewVBox(
 		widget.NewLabel("选择账号:"),
@@ -103,9 +102,85 @@ func main() {
 		addButton,
 	)
 
-	// 使用 Border 布局，让核心代码部分居中
-	content := container.NewBorder(topSection, bottomSection, nil, nil, container.NewCenter(centerSection))
-	myWindow.SetContent(content)
+	homeContent := container.NewBorder(topSection, bottomSection, nil, nil, container.NewCenter(centerSection))
+
+	// ================= 账号管理 Tab 内容 =================
+	var manageListContainer *container.Scroll
+	var refreshManageList func()
+
+	refreshManageList = func() {
+		vbox := container.NewVBox()
+		if len(secrets) == 0 {
+			vbox.Add(widget.NewLabel("暂无保存的账号"))
+		} else {
+			for name, secret := range secrets {
+				accName := name
+				accSecret := secret
+
+				nameLabel := widget.NewLabelWithStyle(accName, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+
+				editBtn := widget.NewButton("编辑", func() {
+					showEditDialogInWindow(myWindow, accName, accSecret, func(newName, newSecret string) {
+						if newName != accName {
+							if _, exists := secrets[newName]; exists {
+								dialog.ShowInformation("错误", "该账号名称已存在", myWindow)
+								return
+							}
+							delete(secrets, accName)
+						}
+						secrets[newName] = newSecret
+						saveSecrets(myApp, secrets)
+						accountSelect.Options = getAccountNames()
+						accountSelect.Refresh()
+						if accountSelect.Selected == accName || accountSelect.Selected == newName {
+							accountSelect.SetSelected(newName)
+						}
+						refreshManageList()
+					})
+				})
+
+				delBtn := widget.NewButton("删除", func() {
+					dialog.ShowConfirm("确认删除", fmt.Sprintf("确定要删除账号 '%s' 吗？", accName), func(ok bool) {
+						if ok {
+							delete(secrets, accName)
+							saveSecrets(myApp, secrets)
+							accountSelect.Options = getAccountNames()
+							accountSelect.Refresh()
+							if accountSelect.Selected == accName {
+								accountSelect.SetSelected("")
+								codeLabel.SetText("------")
+							}
+							refreshManageList()
+						}
+					}, myWindow)
+				})
+
+				row := container.NewBorder(nil, nil, nameLabel, container.NewHBox(editBtn, delBtn))
+				vbox.Add(row)
+				vbox.Add(widget.NewSeparator())
+			}
+		}
+		manageListContainer.Content = vbox
+		manageListContainer.Refresh()
+	}
+
+	manageListContainer = container.NewVScroll(container.NewVBox())
+	refreshManageList()
+
+	manageContent := container.NewBorder(widget.NewLabelWithStyle("已保存账号列表", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), nil, nil, nil, manageListContainer)
+
+	tabs := container.NewAppTabs(
+		container.NewTabItem("验证码", homeContent),
+		container.NewTabItem("账号管理", container.NewPadded(manageContent)),
+	)
+
+	tabs.OnSelected = func(ti *container.TabItem) {
+		if ti.Text == "账号管理" {
+			refreshManageList()
+		}
+	}
+
+	myWindow.SetContent(tabs)
 
 	// ================= 后台定时刷新 =================
 
@@ -171,4 +246,49 @@ func updateCode(accountName string, label *widget.Label) {
 	} else {
 		fyne.Do(func() { label.SetText("Error") })
 	}
+}
+
+// 在原窗口内显示编辑账号弹窗 (Dialog)，宽度设为屏幕宽度减 20px
+func showEditDialogInWindow(parentWindow fyne.Window, currentName string, currentSecret string, onSave func(string, string)) {
+	nameEntry := widget.NewEntry()
+	nameEntry.SetText(currentName)
+
+	secretEntry := widget.NewEntry()
+	secretEntry.SetText(currentSecret)
+
+	formContainer := container.NewVBox(
+		widget.NewLabel("账号名称:"),
+		nameEntry,
+		widget.NewLabel("密钥 (Secret):"),
+		secretEntry,
+	)
+
+	d := dialog.NewCustomConfirm("编辑账号: "+currentName, "保存", "取消", container.NewPadded(formContainer), func(ok bool) {
+		if !ok {
+			return
+		}
+		newName := nameEntry.Text
+		newSecret := secretEntry.Text
+
+		if newName == "" || newSecret == "" {
+			dialog.ShowInformation("错误", "名称和密钥不能为空", parentWindow)
+			return
+		}
+
+		_, err := totp.GenerateCode(newSecret, time.Now())
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("无效的密钥格式: %v", err), parentWindow)
+			return
+		}
+
+		onSave(newName, newSecret)
+	}, parentWindow)
+
+	winSize := parentWindow.Canvas().Size()
+	dialogWidth := winSize.Width - 20
+	if dialogWidth < 280 {
+		dialogWidth = 380
+	}
+	d.Resize(fyne.NewSize(dialogWidth, 220))
+	d.Show()
 }
